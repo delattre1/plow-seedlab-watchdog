@@ -36,19 +36,27 @@ process facts), never agent self-report.
     `BLOCKED_REASON=dependency mypeople not installed`, and installs NOTHING.
 
 ## P4 — independent verify of the result (on the P3 checkpoint node)
-- **G4 (add-on installed on top; 3 functions live):** run the seed's `## Verify` W1–W6 over real
-  running state — `watchdog:Watchdog` alive; the 3 triggers enqueue `[watchdog] …`; the
-  CEO-no-response / stale / false-block actions post on the board in the CEO's voice; W1 confirms
-  the Watchdog Stop does NOT hit `main:Boss`'s queue (standalone).
+Run the seed's full `## Verify` over REAL running state (an INDEPENDENT coordinator, not the
+installing agent, confirms each behaviour came FROM the seed). Drive thresholds low; never wait
+wall-clock. The gates (mirror the seed):
+- **Feat A — A1/A2/A3:** unanswered CEO message → ONE nudge; reply within window → none; 2nd CEO
+  message → only it fires; fires on Done/Cancelled too (no status filter); CEO task-creation
+  untouched past the delay → nudge, picked-up → none.
+- **Feat B — B1/B2/B3:** idle Working card → the AGENT posts EXACTLY `What is the status of this?`
+  (no title-riff, no `(quiet ~Nm)`); idle Done/Cancelled → none, idle Working/Review → nudge;
+  repeated scans → one nudge per idle episode (last-id + cooldown dedup); activation baselines a
+  backlog with ZERO nudges.
+- **Feat C — C1/C2/C3:** false-block → correction; genuine question → none; done-without-proof →
+  proof challenge.
+- **Structural — S1/S2/S3/S4:** `watchdog:Watchdog` has NO `BOSS_ID` (Stop hook reports to no one);
+  every action is a board post by the watchdog; it never marks done / creates; KILL it → the
+  launchd keepalive respawns + re-briefs it (bossless) within ~1 min.
 - **G2 (core stayed Watchdog-free before P3):** already asserted at the checkpoint.
-- **G5 (no-clobber / installed ON TOP, not from zero):** across the P3 add-on install —
-  - `main:Boss` process start-time is IDENTICAL before==after (Boss never restarted from zero);
-  - `INSTALL_DIR/mypeople` was NOT re-cloned (dir inode / git HEAD unchanged);
-  - `:9900/dashboard` + `:9933/todos` never returned non-200 during the run (continuous heartbeat
-    sampled every 5s).
-- **G6 (core guards intact):** Watchdog-authed `POST /todo/status {state:done}` → rejected;
-  `POST /todo/update {op:add}` → rejected.
+- **G4 (no-clobber / installed ON TOP, not from zero):** across the P3 install — `main:Boss`
+  start-time IDENTICAL before==after; `INSTALL_DIR` NOT re-cloned (inode / git HEAD unchanged);
+  the board API never returned non-200 (5s heartbeat). Restart the todo-server ONLY via
+  `launchctl kickstart -k` (never kill+nohup → two-server race).
 
 ## DONE
-G1–G6 all green on the checkpoint pipeline, with a recorded cast/mp4 + the coordinator log attached
-to card 475eea26df62 — same evidentiary bar as the core mypeople seed.
+Every Feat A/B/C, Structural, and G gate green on the checkpoint pipeline, with a recorded cast/mp4 +
+the coordinator log attached to card 475eea26df62 — same evidentiary bar as the core mypeople seed.
