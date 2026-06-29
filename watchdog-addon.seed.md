@@ -99,26 +99,23 @@ fanout seam). PERSIST jobs to a file under the core's todos dir so they survive 
   fire_at=now+delay}`. A newer CEO message on the same card supersedes the older pending job. At fire,
   the ONLY gate is **STILL-MOST-RECENT**: the scheduled CEO comment is still the last comment on the
   card (no reply from anyone, no newer message). If still most recent → hand a `[watchdog incident]`
-  to the agent (with the card + the ACTUAL CEO text to quote) AND send a **Boss-directed alert** (see
-  below). Otherwise it's a no-op (a reply cancels it; a newer CEO message supersedes it). Feat A fires
-  on ALL statuses — including Done/Cancelled — never filtered by status.
+  to the agent (with the card + the ACTUAL CEO text to quote). Otherwise it's a no-op (a reply cancels
+  it; a newer CEO message supersedes it). Feat A fires on ALL statuses — including Done/Cancelled —
+  never filtered by status.
 
 - **Feat A — TASK CREATION by the CEO counts as a CEO message.** When the CEO CREATES a task (the
   HUD/create path tags `by:"CEO"`), schedule the same kind of deferred job. At fire, the gate is
   **STILL-UNANSWERED**: the created task still has no comment, no assignee, and an unchanged initial
-  state (nobody picked it up). If still untouched → `[watchdog incident]` + the **Boss-directed
-  alert** (below); any activity (comment, assignment, state change) → no-op. Guarantees a new task
-  gets owned.
+  state (nobody picked it up). If still untouched → `[watchdog incident]`; any activity (comment,
+  assignment, state change) → no-op. Guarantees a new task gets owned.
 
-- **Boss-directed alert (mandatory card reply) — fired alongside every Feat A nudge AND every Feat B
-  idle nudge.** The CEO ONLY reads the To Do board; a reply the Boss types in the terminal is
-  invisible to him, so the Boss looks unresponsive. So in addition to the public card nudge, the
-  system `mp send`s the **Boss agent** a directed alert naming the card and stating a board reply is
-  MANDATORY, e.g.: `[watchdog] BOSS: card <id> ("<title>") <why> — reply ON THIS CARD. The CEO only
-  sees the board; a terminal reply is invisible to him. A card response is REQUIRED.` This
-  mandatory-reply reminder goes ONLY in the Boss-directed channel — the PUBLIC card nudge stays
-  generic (Feat A quotes the CEO; Feat B posts `What is the status of this?`) unless the CEO asks for
-  it public.
+- **PUBLIC-ONLY — the watchdog NEVER sends a private/Boss-directed message.** The CEO ONLY reads the
+  board and CANNOT see private messages, so any private channel defeats the purpose. Every watchdog
+  action is a PUBLIC card comment (Feat A quotes the CEO; Feat B posts `What is the status of this?`;
+  Feat C posts its correction). There is NO watchdog→Boss inbox alert. The "mandatory reply" is purely
+  the Boss's own behaviour (the Boss always replies ON the card to the public nudge); it is NEVER
+  enforced via a private message. (The core todo-server's own board-activity notifications are separate
+  core infrastructure and are not part of the watchdog.)
 
 - **Feat B — IDLE card (`WATCHDOG_IDLE_MIN`, default 10 min).** A background worker scans the board
   on its own clock (idleness is the ABSENCE of events, so this one is a periodic scan, not
@@ -132,8 +129,8 @@ fanout seam). PERSIST jobs to a file under the core's todos dir so they survive 
   backlog. Dedup per card keyed on BOTH the last-comment-id AND a fire-time cooldown (≥ the idle
   threshold), so it can never post twice within a window even under a transient. When a card fires →
   hand a `[watchdog idle]` incident to the agent that instructs it to post the EXACT fixed generic
-  line, verbatim (NO title, NO context, NO idle-time): `What is the status of this?` — AND send the
-  **Boss-directed alert** (above). (Re-escalation only after another full idle interval of silence.)
+  line, verbatim (NO title, NO context, NO idle-time): `What is the status of this?`. (Re-escalation
+  only after another full idle interval of total silence. PUBLIC card comment only — no private alert.)
 
 - **Feat C — every NON-CEO message → classify.** On every non-test board comment whose author is not
   the CEO and not the watchdog itself, route a `[watchdog classify]` request to the agent with the
@@ -207,10 +204,9 @@ from the SEED). Full runbook: `watchdog-addon.validate.md`.
 - **B3 — no double-fire / no storm.** Repeated scans of the same idle card → exactly one nudge per
   idle episode (last-id + cooldown dedup); ANY new comment resets the clock; activation baselines a
   backlog of idle cards with ZERO nudges.
-- **D1 — Boss-directed mandatory reply.** On every Feat A fire AND every Feat B idle fire, the Boss
-  agent receives a directed alert naming the card and stating a board reply is REQUIRED (`reply ON
-  THIS CARD … A card response is REQUIRED`); the PUBLIC card nudge stays generic (no mandatory-reply
-  text leaks into the public comment unless the CEO asks).
+- **D1 — PUBLIC-ONLY (no private channel).** Across a full Feat A + Feat B + Feat C fire, the Boss
+  agent's inbox receives NO watchdog message — every watchdog action is a PUBLIC card comment by
+  `${WATCHDOG_AGENT}` (assert zero `[watchdog]` sends to the Boss agent).
 - **C1 — false block corrected.** An engineer "just give me the OK and I'll do it" → the watchdog
   posts the "Not blocked — the task existing IS the OK…" correction.
 - **C2 — genuine left alone.** An engineer "which DB, Postgres or Mongo? need your call" → NO post.
