@@ -73,7 +73,7 @@ reports to no one — exactly like the Boss.
 | `WATCHDOG_TOKEN` | (generated) | the watchdog's own credential (distinct from `QUEUE_SECRET`) for any privileged write |
 | `WATCHDOG_NUDGE_DELAY_MIN` | `3` | Feat A delay: minutes before an unanswered CEO message/task fires |
 | `WATCHDOG_IDLE_MIN` | `10` | Feat B threshold: minutes of total silence before an idle card fires |
-| `WATCHDOG_CARD_COOLDOWN_SEC` | `240` | RATE LIMIT: min seconds between ANY two watchdog posts on the SAME card (anti board-spam) |
+| `WATCHDOG_CARD_COOLDOWN_SEC` | `60` | HARD BACKSTOP (not a throttle): min seconds between two watchdog posts on the SAME card — short, just to break a seconds-apart runaway; do NOT raise it enough to blunt aggressiveness |
 | `BOARD_FILE` | (the core's live board path) | PIN the explicit board path so a restart can never default to a missing path (see ## Reliability) |
 
 ## Components
@@ -138,18 +138,23 @@ fanout seam). PERSIST jobs to a file under the core's todos dir so they survive 
   for its own prior `What is the status of this?` pings and the assignee's reply after each. If the
   assignee has answered ~3 times with the SAME / near-identical response (e.g. repeating "this is
   done"), STOP re-asking and walk a BOUNDED ladder, one rung per cooldown window: (1) `[watchdog
-  intent]` — the agent READS THE WHOLE THREAD, infers the CEO's intent, and posts ONE intent-based
-  nudge that MOVES the card (keeps saying done → mark done / ship / attach proof and CLOSE; repeating a
-  block → GO/unblock; else the next step), then WAITS; (2) if it's STILL looping after the intent
-  nudge, `[watchdog escalate]` — post ONE PUBLIC comment that @-mentions the Boss to intervene; (3)
-  then STAND DOWN on that card (never post there again). No tight re-firing.
+  intent]` — the agent READS THE WHOLE THREAD and posts ONE HARD nudge pulled from this checklist:
+  if they CLAIM DONE → the verbatim verification interrogation: *"Is it really done? How was this
+  verified? The only way we trust done = a VIDEO RECORDING posted of the thing doing the thing it was
+  supposed to do. Is this a SEED? How was the seed hydrated? Did it follow the HARDEN LOOP process?
+  How many SUBSTRATES? Do we have the RECORDING of the seed being hydrated (terminal AND browser)?"*;
+  if they are making EXCUSES / claiming blocked → *"Stop giving excuses — your job is not done. This
+  is NOT done until the CEO's ask is complete."* + what to just DO/GO. Then WAIT; (2) if it's STILL
+  looping after the intent nudge, `[watchdog escalate]` — post ONE PUBLIC comment that @-mentions the
+  Boss to intervene; (3) then STAND DOWN on that card (never post there again). No tight re-firing.
 
-- **RATE LIMIT (anti board-spam) — applies to ALL features.** The watchdog never posts to the SAME
-  card more than once per `WATCHDOG_CARD_COOLDOWN_SEC` (default ~4 min), measured across Feat A, Feat
-  B (idle/intent/escalate) AND Feat C classify. Before routing ANY incident the system checks the
-  newest watchdog post + last-routed time for that card and SKIPS if within the window. This is what
-  stops the runaway ping-pong (e.g. watchdog "attach artifact" ⇄ engineer "this is done" in seconds
-  on the single-threaded :TODO_PORT board).
+- **HARD BACKSTOP (NOT a throttle) — anti-runaway only.** The watchdog must stay aggressive; the only
+  limit is a SHORT backstop (`WATCHDOG_CARD_COOLDOWN_SEC`, default ~60s) that breaks a true
+  seconds-apart runaway ping-pong on the single-threaded board (e.g. watchdog "interrogate" ⇄ engineer
+  "it's done" in seconds). Before routing ANY incident the system skips only if it already posted on
+  that card within this short window. Keep it short — do NOT raise it into a throttle that blunts the
+  watchdog's normal aggressive cadence. (Tests run on `test:true` cards so they never fanout to the
+  CEO's board.)
 
 - **Feat C — every NON-CEO message → classify.** On every non-test board comment whose author is not
   the CEO and not the watchdog itself, route a `[watchdog classify]` request to the agent with the
@@ -165,9 +170,13 @@ fanout seam). PERSIST jobs to a file under the core's todos dir so they survive 
   - `[watchdog idle]` → POST exactly `What is the status of this?` verbatim — no riffing on the
     title, no idle-time, nothing appended.
   - `[watchdog intent]` → GROUNDHOG loop (you've asked "status?" ~3× and got the same answer): STOP
-    re-asking. READ THE WHOLE CARD THREAD, infer the CEO's intent, and POST ONE intent-based nudge
-    that MOVES the card (keeps saying done → mark done / ship / attach proof and CLOSE; repeating a
-    block → GO/unblock; else the concrete next step), then WAIT.
+    re-asking. READ THE WHOLE CARD THREAD and POST ONE HARD nudge: if they CLAIM DONE → the verbatim
+    interrogation (*"Is it really done? How was this verified? The only way we trust done = a VIDEO
+    RECORDING posted of the thing doing the thing it was supposed to do. Is this a SEED? How was the
+    seed hydrated? Did it follow the HARDEN LOOP process? How many SUBSTRATES? Do we have the RECORDING
+    of the seed being hydrated (terminal AND browser)?"*); if making EXCUSES/blocked → *"Stop giving
+    excuses — your job is not done. This is NOT done until the CEO's ask is complete."* + what to just
+    DO. Then WAIT.
   - `[watchdog escalate]` → the loop persisted past the intent nudge: post ONE PUBLIC comment that
     @-mentions the Boss to step in, then STOP posting on that card (stand down).
   - `[watchdog incident]` → POST ONE short nudge in the CEO voice, quoting the actual unanswered
@@ -181,8 +190,11 @@ fanout seam). PERSIST jobs to a file under the core's todos dir so they survive 
     how/implementation decision, or anything the author could just DO or TRY. On a false/over-conservative
     block → POST ONE **public GO** (CEO voice, direct): `GO — proceed now. This is not a real CEO block;
     the task existing IS the go-ahead. <name exactly what to just do/try>.` **Bias hard toward GO; when
-    in doubt, GO.** On **DONE-WITHOUT-PROOF** (claims done, no video/print/artifact) → POST `Where is the
-    video/print proving it's done? Attach the artifact.` ONLY stay silent for a CLEARLY genuine
+    in doubt, GO.** On a **DONE CLAIM** → interrogate it HARD (verbatim): `Is it really done? How was
+    this verified? The only way we trust done = a VIDEO RECORDING posted of the thing doing the thing it
+    was supposed to do. Is this a SEED? How was the seed hydrated? Did it follow the HARDEN LOOP process?
+    How many SUBSTRATES? Do we have the RECORDING of the seed being hydrated (terminal AND browser)?`
+    ONLY stay silent for a CLEARLY genuine
     CEO-only / credential / human-only gate (the one safety line — never fake a GO on a real CEO
     decision) or a plain status update with no stall. Post at most once per message.
 - The agent posts via the core's comment API as `${WATCHDOG_AGENT}` (its own id). It NEVER marks done
@@ -235,12 +247,15 @@ from the SEED). Full runbook: `watchdog-addon.validate.md`.
 - **B3 — no double-fire / no storm.** Repeated scans of the same idle card → exactly one nudge per
   idle episode (last-id + cooldown dedup); ANY new comment resets the clock; activation baselines a
   backlog of idle cards with ZERO nudges.
-- **B4 — groundhog loop → intent → escalate → stand down.** After ~3 identical replies to "status?",
-  the system switches to `[watchdog intent]` (read-thread close/ship nudge); if still looping it
+- **B4 — groundhog loop → HARD intent → escalate → stand down.** After ~3 identical replies to
+  "status?", the system switches to `[watchdog intent]`; on a DONE claim the agent posts the verbatim
+  verification interrogation (VIDEO RECORDING / SEED / hydration / HARDEN LOOP / # SUBSTRATES /
+  recording terminal AND browser); on excuses → "stop giving excuses…". If still looping it
   `[watchdog escalate]`s ONCE with a public @Boss, then STANDS DOWN (no further posts on that card).
-- **R1 — per-card rate limit (anti-spam).** Fire many rapid non-CEO messages on one card; the watchdog
-  routes/posts AT MOST ONCE per `WATCHDOG_CARD_COOLDOWN_SEC` (the rest log `SKIP (card cooldown)`) — no
-  ping-pong, no runaway board spam.
+- **R1 — short anti-runaway backstop (not a throttle).** Rapid seconds-apart messages on one card →
+  the watchdog posts AT MOST ONCE per the short `WATCHDOG_CARD_COOLDOWN_SEC` window (rest log `SKIP
+  (card cooldown)`) — kills the ping-pong WITHOUT blunting normal aggressive cadence. (Run on
+  `test:true` cards so tests never fanout to the CEO's board.)
 - **D1 — PUBLIC-ONLY (no private channel).** Across a full Feat A + Feat B + Feat C fire, the Boss
   agent's inbox receives NO watchdog message — every watchdog action is a PUBLIC card comment by
   `${WATCHDOG_AGENT}` (assert zero `[watchdog]` sends to the Boss agent).
@@ -250,8 +265,10 @@ from the SEED). Full runbook: `watchdog-addon.validate.md`.
 - **C2 — genuine CEO/credential/human gate left alone (the one safety line).** "Blocked: I need the
   account login/password — only the CEO has it", or a real taste/scope/product call → the watchdog
   stays SILENT (never fakes a GO on a real CEO/credential gate). A plain status update → also no post.
-- **C3 — done without proof.** "all finished, it's done!" (no artifact) → the watchdog posts "Where is
-  the video/print proving it's done?".
+- **C3 — done claim → HARD interrogation.** "all finished, it's done!" → the watchdog posts the
+  verbatim verification interrogation: *Is it really done? How was this verified? … a VIDEO RECORDING
+  of the thing doing the thing … SEED? how hydrated? HARDEN LOOP? how many SUBSTRATES? recording of the
+  hydrate (terminal AND browser)?*
 
 ### STRUCTURAL
 - **S1 — bossless.** The running `watchdog:Watchdog` process has NO `BOSS_ID` in its env (`ps eww`),
