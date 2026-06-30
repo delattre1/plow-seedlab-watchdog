@@ -73,6 +73,7 @@ reports to no one — exactly like the Boss.
 | `WATCHDOG_TOKEN` | (generated) | the watchdog's own credential (distinct from `QUEUE_SECRET`) for any privileged write |
 | `WATCHDOG_NUDGE_DELAY_MIN` | `3` | Feat A delay: minutes before an unanswered CEO message/task fires |
 | `WATCHDOG_IDLE_MIN` | `10` | Feat B threshold: minutes of total silence before an idle card fires |
+| `WATCHDOG_CARD_COOLDOWN_SEC` | `240` | RATE LIMIT: min seconds between ANY two watchdog posts on the SAME card (anti board-spam) |
 | `BOARD_FILE` | (the core's live board path) | PIN the explicit board path so a restart can never default to a missing path (see ## Reliability) |
 
 ## Components
@@ -133,6 +134,22 @@ fanout seam). PERSIST jobs to a file under the core's todos dir so they survive 
   hand a `[watchdog idle]` incident to the agent that instructs it to post the EXACT fixed generic
   line, verbatim (NO title, NO context, NO idle-time): `What is the status of this?`. (Re-escalation
   only after another full idle interval of total silence. PUBLIC card comment only — no private alert.)
+  **GROUNDHOG-DAY ESCALATION (bounded):** before sending `[watchdog idle]`, the system scans the thread
+  for its own prior `What is the status of this?` pings and the assignee's reply after each. If the
+  assignee has answered ~3 times with the SAME / near-identical response (e.g. repeating "this is
+  done"), STOP re-asking and walk a BOUNDED ladder, one rung per cooldown window: (1) `[watchdog
+  intent]` — the agent READS THE WHOLE THREAD, infers the CEO's intent, and posts ONE intent-based
+  nudge that MOVES the card (keeps saying done → mark done / ship / attach proof and CLOSE; repeating a
+  block → GO/unblock; else the next step), then WAITS; (2) if it's STILL looping after the intent
+  nudge, `[watchdog escalate]` — post ONE PUBLIC comment that @-mentions the Boss to intervene; (3)
+  then STAND DOWN on that card (never post there again). No tight re-firing.
+
+- **RATE LIMIT (anti board-spam) — applies to ALL features.** The watchdog never posts to the SAME
+  card more than once per `WATCHDOG_CARD_COOLDOWN_SEC` (default ~4 min), measured across Feat A, Feat
+  B (idle/intent/escalate) AND Feat C classify. Before routing ANY incident the system checks the
+  newest watchdog post + last-routed time for that card and SKIPS if within the window. This is what
+  stops the runaway ping-pong (e.g. watchdog "attach artifact" ⇄ engineer "this is done" in seconds
+  on the single-threaded :TODO_PORT board).
 
 - **Feat C — every NON-CEO message → classify.** On every non-test board comment whose author is not
   the CEO and not the watchdog itself, route a `[watchdog classify]` request to the agent with the
@@ -147,6 +164,12 @@ fanout seam). PERSIST jobs to a file under the core's todos dir so they survive 
   unsets `BOSS_ID`; see ## Ownership). Brief it (from the corpus) so it acts ONLY on the three tags:
   - `[watchdog idle]` → POST exactly `What is the status of this?` verbatim — no riffing on the
     title, no idle-time, nothing appended.
+  - `[watchdog intent]` → GROUNDHOG loop (you've asked "status?" ~3× and got the same answer): STOP
+    re-asking. READ THE WHOLE CARD THREAD, infer the CEO's intent, and POST ONE intent-based nudge
+    that MOVES the card (keeps saying done → mark done / ship / attach proof and CLOSE; repeating a
+    block → GO/unblock; else the concrete next step), then WAIT.
+  - `[watchdog escalate]` → the loop persisted past the intent nudge: post ONE PUBLIC comment that
+    @-mentions the Boss to step in, then STOP posting on that card (stand down).
   - `[watchdog incident]` → POST ONE short nudge in the CEO voice, quoting the actual unanswered
     message (Feat A may quote because it really has the message).
   - `[watchdog classify]` → the agent's WHOLE PURPOSE is to UNBLOCK: **err by EXCESS, never be
@@ -212,6 +235,12 @@ from the SEED). Full runbook: `watchdog-addon.validate.md`.
 - **B3 — no double-fire / no storm.** Repeated scans of the same idle card → exactly one nudge per
   idle episode (last-id + cooldown dedup); ANY new comment resets the clock; activation baselines a
   backlog of idle cards with ZERO nudges.
+- **B4 — groundhog loop → intent → escalate → stand down.** After ~3 identical replies to "status?",
+  the system switches to `[watchdog intent]` (read-thread close/ship nudge); if still looping it
+  `[watchdog escalate]`s ONCE with a public @Boss, then STANDS DOWN (no further posts on that card).
+- **R1 — per-card rate limit (anti-spam).** Fire many rapid non-CEO messages on one card; the watchdog
+  routes/posts AT MOST ONCE per `WATCHDOG_CARD_COOLDOWN_SEC` (the rest log `SKIP (card cooldown)`) — no
+  ping-pong, no runaway board spam.
 - **D1 — PUBLIC-ONLY (no private channel).** Across a full Feat A + Feat B + Feat C fire, the Boss
   agent's inbox receives NO watchdog message — every watchdog action is a PUBLIC card comment by
   `${WATCHDOG_AGENT}` (assert zero `[watchdog]` sends to the Boss agent).
