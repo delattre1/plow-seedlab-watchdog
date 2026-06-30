@@ -73,6 +73,7 @@ reports to no one — exactly like the Boss.
 | `WATCHDOG_TOKEN` | (generated) | the watchdog's own credential (distinct from `QUEUE_SECRET`) for any privileged write |
 | `WATCHDOG_NUDGE_DELAY_MIN` | `3` | Feat A delay: minutes before an unanswered CEO message/task fires |
 | `WATCHDOG_IDLE_MIN` | `10` | Feat B threshold: minutes of total silence before an idle card fires |
+| `WATCHDOG_MAX_LOAD` | `~cores×2.5` | ANTI-DOS: pause ALL watchdog activity while the 1-min load average exceeds this (auto-resume) — protects the single-threaded board; NOT a throttle |
 | `BOARD_FILE` | (the core's live board path) | PIN the explicit board path so a restart can never default to a missing path (see ## Reliability) |
 
 ## Components
@@ -148,6 +149,16 @@ fanout seam). PERSIST jobs to a file under the core's todos dir so they survive 
 - **NO RATE LIMIT / NO throttle (CEO directive).** The watchdog posts whenever its logic says to —
   there is NO per-card cooldown of any kind. Aggressiveness is the point; do not add one back. (Run
   tests on `test:true` cards so they never fanout to the CEO's board.)
+
+- **ANTI-DOS load guard (the ONLY guard, and it is NOT a throttle).** The board server (`:TODO_PORT`)
+  is single-threaded; a heavy host render (e.g. OBS/4K) plus a no-throttle watchdog can starve it so
+  the CEO's board UI times out and shows BLANK. So the worker (Feat A/B) and Feat-C classify check the
+  1-min load average each cycle and STAND DOWN entirely while it exceeds `WATCHDOG_MAX_LOAD`
+  (default ≈ cores×2.5), auto-RESUMING when load drops — plus a manual `todos/watchdog.PAUSE` file as
+  an override. This is per-MACHINE (overload only), never per-card, so it does not blunt the watchdog's
+  aggressive cadence under normal load. Operationally pair it with deprioritizing the heavy render
+  (`renice` the encoder up so the board server keeps CPU). Board reads must stay fast (sub-second) —
+  if the board times out, the watchdog (or a render) is starving it.
 
 - **Feat C — every NON-CEO message → classify.** On every non-test board comment whose author is not
   the CEO and not the watchdog itself, route a `[watchdog classify]` request to the agent with the
@@ -245,6 +256,10 @@ from the SEED). Full runbook: `watchdog-addon.validate.md`.
 - **R1 — NO rate limit / NO throttle.** Fire many rapid messages on one card → the watchdog is NOT
   throttled (no per-card cooldown exists); it posts whenever its logic fires. (Run tests on `test:true`
   cards so they never fanout to the CEO's board.)
+- **R2 — anti-DOS load guard.** Drive 1-min load over `WATCHDOG_MAX_LOAD` (or `touch todos/watchdog.PAUSE`)
+  → the worker logs `worker PAUSED (overloaded…)` and stops posting; the board read stays sub-second.
+  Drop the load (or rm the file) → `worker RESUMED`, full aggression returns. The board UI must load
+  cards throughout.
 - **D1 — PUBLIC-ONLY (no private channel).** Across a full Feat A + Feat B + Feat C fire, the Boss
   agent's inbox receives NO watchdog message — every watchdog action is a PUBLIC card comment by
   `${WATCHDOG_AGENT}` (assert zero `[watchdog]` sends to the Boss agent).
