@@ -10,9 +10,11 @@ the watchdog's OWN clock (never woken by needing a human to act first):
   task and it sits unanswered, the watchdog nudges the card.
 - **Feat B — idle card (default 10 min).** When a card gets no comment from ANYONE for the
   threshold, the watchdog posts a fixed generic status nudge. Skips Done/Cancelled.
-- **Feat C — false-block / done-without-proof.** Every non-CEO message is classified; a genuine
-  false-block ("waiting for the CEO's OK" when the task already exists) or a done-claim with no
-  proof gets one correction.
+- **Feat C — false-block UNBLOCK / done-without-proof.** Every non-CEO message is classified; when an
+  agent or the Boss is STALLED on a false/over-conservative block ("waiting on B's yes", "waiting for
+  the OK" when the task already exists, anything they could just DO), the watchdog AGGRESSIVELY tells
+  them to GO — bias = unblock by EXCESS. A done-claim with no proof gets a proof challenge. The only
+  silence is a genuinely CEO-only / credential / human-only gate.
 
 Division of labour (the architecture): the **SYSTEM** (todo-server) DETECTS, SCHEDULES, GATES and
 DEDUPS; the **AGENT** (`watchdog:Watchdog`) does the JUDGMENT and POSTS the human-facing message.
@@ -147,13 +149,19 @@ fanout seam). PERSIST jobs to a file under the core's todos dir so they survive 
     title, no idle-time, nothing appended.
   - `[watchdog incident]` → POST ONE short nudge in the CEO voice, quoting the actual unanswered
     message (Feat A may quote because it really has the message).
-  - `[watchdog classify]` → judge the quoted non-CEO message: **FALSE BLOCK** (claims/implies
-    blocked-on-CEO or waiting-for-CEO OK/approval/sign-off to proceed, when the task already exists =
-    the CEO asking IS the go-ahead) → POST `Not blocked — the task existing IS the OK. Keep working to
-    the done-condition.` ; **DONE-WITHOUT-PROOF** (claims done but attaches no video/print/artifact) →
-    POST `Where is the video/print proving it's done? Attach the artifact.` ; a GENUINE
-    question/decision/real blocker (taste, scope, credentials, money, access, which-option) or a
-    normal status update → DO NOTHING. Post at most once per message.
+  - `[watchdog classify]` → the agent's WHOLE PURPOSE is to UNBLOCK: **err by EXCESS, never be
+    conservative.** Detect whether the author is STALLED — "waiting on", "blocked on", "waiting for a
+    yes/OK/sign-off", "can I / should I", "pending", "once X then", or any claimed block. A block is
+    **REAL only** if it genuinely needs (a) the CEO himself for a taste/scope/product call, (b) a
+    credential/login/secret/payment, or (c) a human-only physical step. **EVERYTHING ELSE is a
+    FALSE / over-conservative block** — waiting on another agent, waiting for someone's "yes", a
+    how/implementation decision, or anything the author could just DO or TRY. On a false/over-conservative
+    block → POST ONE **public GO** (CEO voice, direct): `GO — proceed now. This is not a real CEO block;
+    the task existing IS the go-ahead. <name exactly what to just do/try>.` **Bias hard toward GO; when
+    in doubt, GO.** On **DONE-WITHOUT-PROOF** (claims done, no video/print/artifact) → POST `Where is the
+    video/print proving it's done? Attach the artifact.` ONLY stay silent for a CLEARLY genuine
+    CEO-only / credential / human-only gate (the one safety line — never fake a GO on a real CEO
+    decision) or a plain status update with no stall. Post at most once per message.
 - The agent posts via the core's comment API as `${WATCHDOG_AGENT}` (its own id). It NEVER marks done
   and NEVER creates tasks.
 
@@ -207,11 +215,14 @@ from the SEED). Full runbook: `watchdog-addon.validate.md`.
 - **D1 — PUBLIC-ONLY (no private channel).** Across a full Feat A + Feat B + Feat C fire, the Boss
   agent's inbox receives NO watchdog message — every watchdog action is a PUBLIC card comment by
   `${WATCHDOG_AGENT}` (assert zero `[watchdog]` sends to the Boss agent).
-- **C1 — false block corrected.** An engineer "just give me the OK and I'll do it" → the watchdog
-  posts the "Not blocked — the task existing IS the OK…" correction.
-- **C2 — genuine left alone.** An engineer "which DB, Postgres or Mongo? need your call" → NO post.
-- **C3 — done without proof.** An engineer "all finished, it's done!" (no artifact) → the watchdog
-  posts "Where is the video/print proving it's done?".
+- **C1 — aggressive UNBLOCK (GO).** A stalled false/over-conservative block — e.g. `[BOSS] Waiting on
+  B yes to take YouTube live` or "just give me the OK and I'll do it" → the watchdog posts a public
+  **GO — proceed now…** telling them exactly what to just do. Bias = unblock by excess.
+- **C2 — genuine CEO/credential/human gate left alone (the one safety line).** "Blocked: I need the
+  account login/password — only the CEO has it", or a real taste/scope/product call → the watchdog
+  stays SILENT (never fakes a GO on a real CEO/credential gate). A plain status update → also no post.
+- **C3 — done without proof.** "all finished, it's done!" (no artifact) → the watchdog posts "Where is
+  the video/print proving it's done?".
 
 ### STRUCTURAL
 - **S1 — bossless.** The running `watchdog:Watchdog` process has NO `BOSS_ID` in its env (`ps eww`),
